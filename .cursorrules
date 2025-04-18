@@ -1,0 +1,77 @@
+Project Overview
+This is a Next.js project (App Router) for CostPerDemo, a B2B SaaS platform for client onboarding, campaign management, and analytics. The project uses Supabase for authentication and database, ShadCN for UI components, and Tailwind CSS for styling. The goal is to build a scalable, mobile-first platform with a focus on self-service onboarding and campaign-specific landing pages.
+
+Coding Standards
+Language: Use TypeScript for all files (.tsx, .ts).
+File Structure:
+Place pages in app/ (Next.js App Router).
+Place components in components/ (e.g., components/AuthForm.tsx).
+Place Supabase utilities in lib/ (e.g., lib/supabase.ts).
+Place styles in styles/ or use Tailwind CSS classes.
+Naming Conventions:
+Use PascalCase for components (e.g., AuthForm).
+Use camelCase for variables and functions (e.g., handleSignup).
+Use kebab-case for file names (e.g., auth-form.tsx).
+Formatting:
+Use Prettier for auto-formatting (2-space indentation, single quotes).
+Follow ESLint rules defined in .eslintrc.json.
+Comments:
+Add JSDoc comments for complex functions and components.
+Include a brief comment for each file explaining its purpose.
+Framework and Libraries
+Next.js:
+Use App Router (app/ directory) for routing.
+Prefer server components over client components unless interactivity is needed.
+Use getServerSideProps or getStaticProps for data fetching when applicable.
+Implement middleware for authentication checks (middleware.ts).
+Supabase:
+Use @supabase/supabase-js for client-side interactions.
+Initialize Supabase client in lib/supabase.ts.
+Use Supabase Auth for email/password signup with email verification.
+Query tables (workspaces, users, etc.) using Supabase’s TypeScript client.
+ShadCN:
+Use ShadCN components (Tabs, Input, Button, etc.) for UI.
+Follow ShadCN’s folder structure (components/ui/).
+Customize components with Tailwind CSS classes.
+Tailwind CSS:
+Use utility-first classes for styling.
+Prefer scoped styles (e.g., CSS modules) for landing pages to avoid conflicts.
+Follow mobile-first design principles (e.g., sm:, md: breakpoints).
+Authentication Rules
+Implement authentication using Supabase Auth in app/signup, app/login, app/verify, and app/workspace.
+Require email verification for all new users.
+Protect routes with middleware to redirect unauthenticated users to /login.
+Assign client role to new users by default; admin role is set manually in Supabase.
+After signup and verification, prompt users to create a workspace (company name, optional subdomain).
+Database Interactions
+Use Supabase tables: workspaces, users, workspace_onboarding, etc.
+Write type-safe queries using Supabase’s TypeScript client.
+Handle errors gracefully with try/catch blocks.
+Encrypt sensitive data (e.g., Sales Navigator credentials) using Supabase’s jsonb type.
+Component Guidelines
+Create reusable components in components/ (e.g., AuthForm, WorkspaceForm).
+Use ShadCN components for forms, buttons, and tabs.
+Ensure components are mobile-first with Tailwind’s responsive classes.
+Avoid inline styles; use Tailwind or CSS modules.
+Add ARIA attributes for accessibility.
+Error Handling
+Display user-friendly error messages for form validation and API errors.
+Log server-side errors to the console for debugging.
+Redirect to an error page (app/error.tsx) for unhandled errors.
+Performance
+Use Next.js’s Static Site Generation (SSG) or Server-Side Rendering (SSR) for pages.
+Optimize images and assets in public/.
+Minimize client-side JavaScript by leveraging server components.
+V0.dev Integration
+Integrate V0.dev-generated code (ShadCN components, Tailwind styles) into components/ or app/.
+Refactor V0.dev code to match TypeScript and project conventions.
+Ensure V0.dev components are reusable and follow mobile-first design.
+Testing
+Write unit tests for critical components (e.g., AuthForm) using Jest.
+Test API routes and Supabase queries with mock data.
+Manually test UI responsiveness on mobile and desktop.
+Additional Notes
+Follow the project plan outlined in the working document (CostPerDemo System Restructuring Plan).
+Prioritize Phase 1: Authentication and Workspace Creation.
+Ask for clarification if a task is unclear or conflicts with the plan.
+Suggest improvements to code structure or performance when applicable.
