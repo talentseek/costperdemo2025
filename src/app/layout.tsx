@@ -1,6 +1,7 @@
 import './globals.css'
 import { Inter } from 'next/font/google'
 import { Metadata, Viewport } from 'next'
+import { ThemeProvider } from '@/components/theme-provider'
 
 // Initialize Inter font
 const inter = Inter({ subsets: ['latin'] })
@@ -30,9 +31,16 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
-        <main className="min-h-screen bg-[hsl(var(--background))]">
-          {children}
-        </main>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <main className="min-h-screen bg-[hsl(var(--background))]">
+            {children}
+          </main>
+        </ThemeProvider>
       </body>
     </html>
   )

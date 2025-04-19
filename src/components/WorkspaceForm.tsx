@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import * as z from 'zod'
@@ -9,19 +9,25 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
-import { supabase } from '@/lib/supabase'
+import { Spinner } from '@/components/ui/spinner'
+import { ModeToggle } from '@/components/mode-toggle'
 
-// Schema for form validation
-const workspaceSchema = z.object({
-  companyName: z.string().min(1, 'Company name is required'),
-  subdomain: z.string().optional(),
+// Define the schema directly with the type
+const _workspaceFormSchema = z.object({
+  name: z.string().min(2, { message: "Workspace name must be at least 2 characters" }),
+  subdomain: z.string()
+    .min(2, { message: "Subdomain must be at least 2 characters" })
+    .regex(/^[a-z0-9-]+$/, { message: "Subdomain can only contain lowercase letters, numbers, and hyphens" })
+    .optional()
+    .or(z.literal(''))
 })
 
-type WorkspaceFormValues = z.infer<typeof workspaceSchema>
+// Define type from the schema
+type WorkspaceFormValues = z.infer<typeof _workspaceFormSchema>
 
 /**
  * WorkspaceForm component handles workspace creation
- * Creates a workspace record and updates the user's workspace_id in Supabase
+ * Creates a workspace record and updates the user's workspace_id through the API
  */
 export default function WorkspaceForm() {
   const router = useRouter()
@@ -30,7 +36,7 @@ export default function WorkspaceForm() {
 
   const form = useForm<WorkspaceFormValues>({
     defaultValues: {
-      companyName: '',
+      name: '',
       subdomain: '',
     },
   })
@@ -40,67 +46,45 @@ export default function WorkspaceForm() {
     setError("")
 
     try {
-      // Get current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError) throw new Error(userError.message)
-      if (!user) throw new Error('No authenticated user found')
+      // Create the request payload
+      const payload = {
+        companyName: data.name, 
+        subdomain: data.subdomain && data.subdomain.trim() !== '' ? data.subdomain : null
+      };
+      console.log('Sending workspace creation request with payload:', payload);
+      
+      // Use the API endpoint to create workspace
+      const response = await fetch('/api/workspace/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
 
-      // Start a transaction by creating the workspace first
-      const { data: workspace, error: workspaceError } = await supabase
-        .from('workspaces')
-        .insert({
-          name: data.companyName,
-          subdomain: data.subdomain || null,
-          owner_id: user.id // Set the owner_id to the current user
-        })
-        .select()
-        .single()
+      const result = await response.json()
+      console.log('Workspace creation API response:', { status: response.status, result });
 
-      if (workspaceError) throw new Error(workspaceError.message)
-      if (!workspace) throw new Error('Failed to create workspace')
-
-      // Check if user record exists
-      const { data: existingUser, error: userCheckError } = await supabase
-        .from('users')
-        .select()
-        .eq('id', user.id)
-        .maybeSingle()
-
-      if (userCheckError) throw new Error(userCheckError.message)
-
-      if (!existingUser) {
-        // Create new user record if it doesn't exist
-        const { error: createUserError } = await supabase
-          .from('users')
-          .insert({
-            id: user.id,
-            email: user.email,
-            role: 'client',
-            workspace_id: workspace.id
-          })
-
-        if (createUserError) throw new Error(createUserError.message)
-      } else {
-        // Update existing user's workspace_id
-        const { error: updateError } = await supabase
-          .from('users')
-          .update({ workspace_id: workspace.id })
-          .eq('id', user.id)
-
-        if (updateError) throw new Error(updateError.message)
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to create workspace')
       }
 
+      // On success, redirect to dashboard
       router.push('/dashboard')
     } catch (err) {
       console.error('Error creating workspace:', err)
       setError(err instanceof Error ? err.message : 'Failed to create workspace')
+    } finally {
       setIsLoading(false)
     }
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center p-4 bg-[hsl(var(--background))]">
+    <div className="flex min-h-screen flex-col items-center justify-center p-4 bg-background">
       <div className="w-full max-w-md">
+        <div className="flex justify-end mb-4">
+          <ModeToggle />
+        </div>
         <Card className="w-full max-w-md">
           <div className="p-6 space-y-6">
             <div className="space-y-2">
@@ -117,16 +101,17 @@ export default function WorkspaceForm() {
                 </div>
               )}
               <div className="space-y-2">
-                <Label htmlFor="company">Company Name</Label>
+                <Label htmlFor="name">Workspace Name</Label>
                 <Input
-                  id="company"
+                  id="name"
                   placeholder="Acme Inc."
-                  {...form.register("companyName")}
-                  className={form.formState.errors.companyName ? "border-destructive" : ""}
+                  {...form.register("name")}
+                  className={form.formState.errors.name ? "border-destructive" : ""}
+                  disabled={isLoading}
                 />
-                {form.formState.errors.companyName && (
+                {form.formState.errors.name && (
                   <span className="text-sm text-destructive">
-                    {form.formState.errors.companyName.message}
+                    {form.formState.errors.name.message}
                   </span>
                 )}
               </div>
@@ -138,6 +123,7 @@ export default function WorkspaceForm() {
                     placeholder="acme"
                     {...form.register("subdomain")}
                     className={form.formState.errors.subdomain ? "border-destructive" : ""}
+                    disabled={isLoading}
                   />
                   <span className="text-muted-foreground">.costperdemo.com</span>
                 </div>
@@ -148,7 +134,14 @@ export default function WorkspaceForm() {
                 )}
               </div>
               <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? "Creating..." : "Create Workspace"}
+                {isLoading ? (
+                  <>
+                    <Spinner size="sm" className="mr-2" />
+                    Creating...
+                  </>
+                ) : (
+                  "Create Workspace"
+                )}
               </Button>
             </form>
           </div>

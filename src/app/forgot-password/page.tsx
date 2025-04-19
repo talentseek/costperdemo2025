@@ -7,10 +7,11 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { supabase } from '@/lib/supabase'
+import { createBrowserClient } from '@/utils/supabase'
 
 export default function ForgotPasswordPage() {
   const router = useRouter()
+  const supabase = createBrowserClient()
   const [email, setEmail] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -42,9 +43,9 @@ export default function ForgotPasswordPage() {
     <div className="flex min-h-screen flex-col items-center justify-center p-4 bg-background">
       <Card className="w-full max-w-md p-6 space-y-6">
         <div className="space-y-2 text-center">
-          <h1 className="text-2xl font-bold">Reset Password</h1>
+          <h1 className="text-2xl font-bold">Forgot Password</h1>
           <p className="text-muted-foreground">
-            Enter your email address and we'll send you a link to reset your password.
+            Enter your email and we&apos;ll send you a reset link
           </p>
         </div>
 
@@ -78,11 +79,11 @@ export default function ForgotPasswordPage() {
               {isLoading ? "Sending..." : "Send Reset Link"}
             </Button>
 
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              onClick={() => router.push('/login')}
+            <Button 
+              type="button" 
+              variant="outline" 
+              className="mt-4" 
+              onClick={() => router.push('/auth?tab=login')}
             >
               Back to Login
             </Button>

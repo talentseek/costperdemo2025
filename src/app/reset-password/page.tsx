@@ -7,26 +7,31 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { supabase } from '@/lib/supabase'
+import { createBrowserClient } from '@/utils/supabase'
+import { toast } from 'sonner'
 
 export default function ResetPasswordPage() {
   const router = useRouter()
+  const supabase = createBrowserClient()
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [code, setCode] = useState('')
 
   useEffect(() => {
-    // Check if we have a session when the component mounts
-    const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
-        router.push('/login')
-      }
+    // Check for hash in URL for password reset
+    const hash = window.location.hash.substring(1);
+    if (hash) {
+      const params = new URLSearchParams(hash);
+      setCode(params.get('code') || '');
     }
 
-    checkSession()
-  }, [router])
+    // Redirect if not hash - this means user navigated directly to this page
+    if (!window.location.hash && !code) {
+      router.push('/login');
+    }
+  }, [code, router, supabase.auth]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -60,7 +65,8 @@ export default function ResetPasswordPage() {
       }
 
       // Password updated successfully
-      router.push('/login?message=Password updated successfully. Please log in.')
+      toast.success('Password has been reset successfully')
+      router.push('/auth?tab=login')
     } catch (err) {
       console.error('Error updating password:', err)
       setError(err instanceof Error ? err.message : 'Failed to update password')

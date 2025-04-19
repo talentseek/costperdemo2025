@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { supabase } from '@/lib/supabase'
+import { createBrowserClient } from '@/utils/supabase'
 
 /**
  * VerifyPrompt component handles email verification flow
@@ -18,6 +18,7 @@ export default function VerifyPrompt() {
   const [isVerified, setIsVerified] = useState(false)
   const [error, setError] = useState('')
   const [isResending, setIsResending] = useState(false)
+  const supabase = createBrowserClient()
 
   const handleResendVerification = async () => {
     try {
@@ -41,6 +42,18 @@ export default function VerifyPrompt() {
       setIsResending(false)
     }
   }
+
+  useEffect(() => {
+    // Check if we have a session when the component mounts
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        router.push('/dashboard')
+      }
+    }
+
+    checkSession()
+  }, [router, supabase.auth])
 
   useEffect(() => {
     const verifyEmail = async () => {
@@ -105,7 +118,7 @@ export default function VerifyPrompt() {
     }
 
     verifyEmail()
-  }, [router, searchParams])
+  }, [router, searchParams, supabase.auth])
 
   return (
     <Card className="w-full max-w-md p-6 space-y-6">

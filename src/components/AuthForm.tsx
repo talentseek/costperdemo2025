@@ -1,14 +1,15 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { AlertCircle } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { supabase } from '@/lib/supabase'
+import { Spinner } from '@/components/ui/spinner'
+import { createBrowserClient } from '@/utils/supabase'
 import { Card } from "@/components/ui/card"
 
 interface FormState {
@@ -30,12 +31,26 @@ interface AuthFormProps {
 }
 
 /**
+ * Common error messages for authentication
+ */
+const ERROR_MESSAGES: Record<string, string> = {
+  'auth_error': 'Authentication failed. Please login again.',
+  'session_error': 'Your session has expired. Please login again.',
+  'db_error': 'Database error occurred. Please try again.',
+  'middleware_error': 'An error occurred. Please try again.',
+  'user_creation_failed': 'Failed to create user. Please try again.',
+  'callback_error': 'Error during authentication. Please try again.'
+}
+
+/**
  * AuthForm component handles user authentication with email/password
  * Supports both signup (with email verification) and login flows
  * Uses Supabase Auth and follows mobile-first design principles
  */
 export default function AuthForm({ defaultTab = "login" }: AuthFormProps) {
+  const params = useSearchParams()
   const router = useRouter()
+  const [_formTab, setActiveTab] = useState(defaultTab)
   const [isLoading, setIsLoading] = useState(false)
   const [signupForm, setSignupForm] = useState<FormState>({
     email: '',
@@ -54,35 +69,54 @@ export default function AuthForm({ defaultTab = "login" }: AuthFormProps) {
     loginPassword: '',
   })
 
+  const supabase = createBrowserClient()
+  
+  // Use searchParams to get the active tab
+  const _activeTab = params?.get('tab') || 'login'
+
+  // Handle URL parameters for errors and redirects
+  useEffect(() => {
+    const errorParam = params.get('error')
+    if (errorParam) {
+      // Set the form tab to login when error is in URL
+      setActiveTab('login')
+      
+      // Set the error message
+      setErrors(prev => ({
+        ...prev,
+        loginEmail: ERROR_MESSAGES[errorParam] || 'An error occurred. Please try again.'
+      }))
+    }
+    
+    // Store redirect parameter if present
+    const redirectTo = params.get('redirectTo')
+    if (redirectTo) {
+      sessionStorage.setItem('redirectTo', redirectTo)
+    }
+  }, [params])
+
+  // Email validation helper
   const validateEmail = (email: string): boolean => {
     const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     return re.test(email)
   }
 
-  const handleSignupChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle form input changes with error clearing
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>, formType: 'login' | 'signup') => {
     const { name, value } = e.target
-    setSignupForm((prev) => ({ ...prev, [name]: value }))
-
-    // Clear errors when typing
-    if (name === 'email') {
-      setErrors((prev) => ({ ...prev, signupEmail: '' }))
-    } else if (name === 'password') {
-      setErrors((prev) => ({ ...prev, signupPassword: '' }))
-    } else if (name === 'confirmPassword') {
-      setErrors((prev) => ({ ...prev, signupConfirmPassword: '' }))
+    
+    if (formType === 'signup') {
+      setSignupForm(prev => ({ ...prev, [name]: value }))
+    } else {
+      setLoginForm(prev => ({ ...prev, [name]: value }))
     }
-  }
-
-  const handleLoginChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target
-    setLoginForm((prev) => ({ ...prev, [name]: value }))
-
-    // Clear errors when typing
-    if (name === 'email') {
-      setErrors((prev) => ({ ...prev, loginEmail: '' }))
-    } else if (name === 'password') {
-      setErrors((prev) => ({ ...prev, loginPassword: '' }))
-    }
+    
+    // Clear error for the field being edited
+    const errorField = formType === 'signup' 
+      ? `signup${name.charAt(0).toUpperCase() + name.slice(1)}` as keyof FormErrors
+      : `login${name.charAt(0).toUpperCase() + name.slice(1)}` as keyof FormErrors;
+      
+    setErrors(prev => ({ ...prev, [errorField]: '' }))
   }
 
   const handleSignup = async (e: React.FormEvent) => {
@@ -119,11 +153,15 @@ export default function AuthForm({ defaultTab = "login" }: AuthFormProps) {
     if (valid) {
       setIsLoading(true)
       try {
+        // Create the full redirect URL
+        const redirectUrl = new URL('/api/auth/callback', window.location.origin)
+        redirectUrl.searchParams.set('redirectTo', '/verify/success')
+        
         const { data, error: signUpError } = await supabase.auth.signUp({
           email: signupForm.email,
           password: signupForm.password,
           options: {
-            emailRedirectTo: `${window.location.origin}/verify`,
+            emailRedirectTo: redirectUrl.toString(),
           }
         })
 
@@ -134,8 +172,8 @@ export default function AuthForm({ defaultTab = "login" }: AuthFormProps) {
           throw new Error('This email is already registered. Please log in instead.')
         }
 
-        // Redirect to verify page with user ID
-        router.push(`/verify?email=${encodeURIComponent(signupForm.email)}&id=${data.user?.id}`)
+        // Redirect to verify page with user's email to allow resending verification
+        router.push(`/verify?email=${encodeURIComponent(signupForm.email)}`)
       } catch (err) {
         setErrors(prev => ({
           ...prev,
@@ -172,58 +210,74 @@ export default function AuthForm({ defaultTab = "login" }: AuthFormProps) {
     if (valid) {
       setIsLoading(true)
       try {
-        console.log('Attempting login with:', loginForm.email)
-        const { data: authData, error: signInError } = await supabase.auth.signInWithPassword({
-          email: loginForm.email,
-          password: loginForm.password,
+        // Use the API route for consistency
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(loginForm),
         })
-
-        if (signInError) {
-          console.error('Sign in error:', signInError)
-          throw signInError
+        
+        // Check if the response is JSON
+        const contentType = response.headers.get('content-type')
+        if (!contentType || !contentType.includes('application/json')) {
+          const text = await response.text()
+          console.error('Non-JSON response:', text)
+          throw new Error('Server returned an invalid response')
         }
-
-        console.log('Login successful:', authData)
-
-        // Check if user has a workspace
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('workspace_id, role')
-          .eq('id', authData.user.id)
-          .single()
-
-        if (userError && userError.code !== 'PGRST116') {
-          console.error('User data error:', userError)
-          throw userError
+        
+        const data = await response.json()
+        
+        if (!response.ok) {
+          // Format user-friendly error message
+          let errorMsg = data.error || 'Login failed'
+          
+          if (errorMsg.includes('Invalid login credentials') || 
+              errorMsg.includes('email or password')) {
+            errorMsg = 'The email or password you entered is incorrect.'
+          } else if (errorMsg.includes('verify your email')) {
+            errorMsg = 'Please check your email and click the verification link before logging in.'
+          }
+          
+          setErrors(prev => ({ ...prev, loginEmail: errorMsg }))
+          return
         }
-
-        console.log('User data:', userData)
-
-        // Redirect based on role and workspace status
-        if (userData?.role === 'admin') {
-          console.log('Redirecting admin to /admin')
-          router.push('/admin')
-        } else if (userData?.workspace_id) {
-          console.log('Redirecting to /dashboard')
-          router.push('/dashboard')
-        } else {
-          console.log('Redirecting to /workspace')
-          router.push('/workspace')
+        
+        // Determine redirect based on user role & workspace
+        let redirectPath = '/workspace'
+        
+        if (data.user?.workspace_id) {
+          // Check for stored redirect path or use dashboard
+          redirectPath = sessionStorage.getItem('redirectTo') || '/dashboard'
+          sessionStorage.removeItem('redirectTo') // Clear after use
+        } else if (data.user?.role === 'admin') {
+          redirectPath = '/admin'
         }
-
-        // Force a router refresh to update the navigation
+        
+        router.push(redirectPath)
         router.refresh()
       } catch (err) {
         console.error('Login error:', err)
         setErrors(prev => ({
           ...prev,
-          loginEmail: err instanceof Error ? err.message : 'An error occurred during login'
+          loginEmail: err instanceof Error 
+            ? err.message 
+            : 'Could not connect to the server. Please check your internet connection.'
         }))
       } finally {
         setIsLoading(false)
       }
     }
   }
+
+  // Error display component to reduce duplication
+  const ErrorMessage = ({ message }: { message: string }) => (
+    message ? (
+      <div className="flex items-center gap-x-2 text-sm text-red-500">
+        <AlertCircle className="h-4 w-4" />
+        <p>{message}</p>
+      </div>
+    ) : null
+  )
 
   return (
     <Card className="w-full max-w-md p-0 overflow-hidden">
@@ -243,15 +297,11 @@ export default function AuthForm({ defaultTab = "login" }: AuthFormProps) {
                 autoComplete="username"
                 placeholder="m@example.com"
                 value={loginForm.email}
-                onChange={handleLoginChange}
+                onChange={(e) => handleInputChange(e, 'login')}
                 className={errors.loginEmail ? "ring-2 ring-red-500" : ""}
+                disabled={isLoading}
               />
-              {errors.loginEmail && (
-                <div className="flex items-center gap-x-2 text-sm text-red-500">
-                  <AlertCircle className="h-4 w-4" />
-                  <p>{errors.loginEmail}</p>
-                </div>
-              )}
+              <ErrorMessage message={errors.loginEmail} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="loginPassword">Password</Label>
@@ -261,18 +311,21 @@ export default function AuthForm({ defaultTab = "login" }: AuthFormProps) {
                 type="password"
                 autoComplete="current-password"
                 value={loginForm.password}
-                onChange={handleLoginChange}
+                onChange={(e) => handleInputChange(e, 'login')}
                 className={errors.loginPassword ? "ring-2 ring-red-500" : ""}
+                disabled={isLoading}
               />
-              {errors.loginPassword && (
-                <div className="flex items-center gap-x-2 text-sm text-red-500">
-                  <AlertCircle className="h-4 w-4" />
-                  <p>{errors.loginPassword}</p>
-                </div>
-              )}
+              <ErrorMessage message={errors.loginPassword} />
             </div>
             <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Loading..." : "Login"}
+              {isLoading ? (
+                <>
+                  <Spinner size="sm" className="mr-2" />
+                  Signing in...
+                </>
+              ) : (
+                "Sign in"
+              )}
             </Button>
             <div className="text-center">
               <Link href="/forgot-password" className="text-sm text-gray-500 hover:text-gray-800 underline">
@@ -292,15 +345,11 @@ export default function AuthForm({ defaultTab = "login" }: AuthFormProps) {
                 autoComplete="username"
                 placeholder="m@example.com"
                 value={signupForm.email}
-                onChange={handleSignupChange}
+                onChange={(e) => handleInputChange(e, 'signup')}
                 className={errors.signupEmail ? "ring-2 ring-red-500" : ""}
+                disabled={isLoading}
               />
-              {errors.signupEmail && (
-                <div className="flex items-center gap-x-2 text-sm text-red-500">
-                  <AlertCircle className="h-4 w-4" />
-                  <p>{errors.signupEmail}</p>
-                </div>
-              )}
+              <ErrorMessage message={errors.signupEmail} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="signupPassword">Password</Label>
@@ -310,15 +359,11 @@ export default function AuthForm({ defaultTab = "login" }: AuthFormProps) {
                 type="password"
                 autoComplete="new-password"
                 value={signupForm.password}
-                onChange={handleSignupChange}
+                onChange={(e) => handleInputChange(e, 'signup')}
                 className={errors.signupPassword ? "ring-2 ring-red-500" : ""}
+                disabled={isLoading}
               />
-              {errors.signupPassword && (
-                <div className="flex items-center gap-x-2 text-sm text-red-500">
-                  <AlertCircle className="h-4 w-4" />
-                  <p>{errors.signupPassword}</p>
-                </div>
-              )}
+              <ErrorMessage message={errors.signupPassword} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">Confirm Password</Label>
@@ -328,18 +373,21 @@ export default function AuthForm({ defaultTab = "login" }: AuthFormProps) {
                 type="password"
                 autoComplete="new-password"
                 value={signupForm.confirmPassword}
-                onChange={handleSignupChange}
+                onChange={(e) => handleInputChange(e, 'signup')}
                 className={errors.signupConfirmPassword ? "ring-2 ring-red-500" : ""}
+                disabled={isLoading}
               />
-              {errors.signupConfirmPassword && (
-                <div className="flex items-center gap-x-2 text-sm text-red-500">
-                  <AlertCircle className="h-4 w-4" />
-                  <p>{errors.signupConfirmPassword}</p>
-                </div>
-              )}
+              <ErrorMessage message={errors.signupConfirmPassword} />
             </div>
             <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Loading..." : "Create Account"}
+              {isLoading ? (
+                <>
+                  <Spinner size="sm" className="mr-2" />
+                  Creating account...
+                </>
+              ) : (
+                "Create Account"
+              )}
             </Button>
           </form>
         </TabsContent>

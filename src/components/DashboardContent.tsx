@@ -1,96 +1,109 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { supabase } from '@/lib/supabase'
+import { Spinner } from '@/components/ui/spinner'
+import { toast } from 'sonner'
+import { handleLogout } from '@/lib/utils'
+import { ModeToggle } from '@/components/mode-toggle'
+
+interface User {
+  id: string
+  email: string
+  role: string
+  workspace_id: string | null
+}
 
 interface Workspace {
   id: string
   name: string
   subdomain: string | null
+  owner_id: string
+  created_at: string
 }
 
 export default function DashboardContent() {
   const router = useRouter()
+  const [_user, setUser] = useState<User | null>(null)
   const [workspace, setWorkspace] = useState<Workspace | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [_error, setError] = useState<string | null>(null)
+
+  // Define fetchUserData with useCallback to avoid dependency issues
+  const fetchUserData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/auth/session');
+      // Check for HTTP error responses
+      if (!response.ok) {
+        const _errorData = await response.json();
+        throw new Error(_errorData.error || 'Failed to fetch user session');
+      }
+      
+      const data = await response.json();
+      
+      // If no user or session, redirect to login
+      if (!data.user) {
+        router.push('/login');
+        return;
+      }
+      
+      setUser(data.user);
+    } catch (_err) {
+      console.error('Error loading profile:', _err)
+      setError(_err instanceof Error ? _err.message : 'Failed to load profile')
+    } finally {
+      setLoading(false)
+    }
+  }, [router]);
 
   useEffect(() => {
-    async function loadWorkspace() {
+    fetchUserData();
+    
+    // Define fetchWorkspaceData inside useEffect to avoid dependency issues
+    const fetchWorkspaceData = async () => {
       try {
-        // Get current user
-        const { data: { user }, error: userError } = await supabase.auth.getUser()
-        console.log('Current user:', user)
-        if (userError) throw userError
-        if (!user) {
-          console.log('No user found, redirecting to login')
-          router.push('/login')
-          return
-        }
-
-        // Get user's workspace
-        const { data: userData, error: userDataError } = await supabase
-          .from('users')
-          .select('workspace_id')
-          .eq('id', user.id)
-          .single()
+        const response = await fetch('/api/workspace/get');
         
-        console.log('User data:', userData)
-        console.log('User data error:', userDataError)
-        
-        if (userDataError) {
-          console.error('Error fetching user data:', userDataError)
-          throw userDataError
+        // Check for HTTP error responses
+        if (!response.ok) {
+          const _errorData = await response.json();
+          setError('Failed to load workspace data');
+          return;
         }
         
-        if (!userData?.workspace_id) {
-          console.log('No workspace_id found, redirecting to workspace creation')
-          router.push('/workspace')
-          return
+        const data = await response.json();
+        
+        if (data.workspace) {
+          setWorkspace(data.workspace);
+        } else {
+          setError('No workspace found');
         }
-
-        // Get workspace details
-        const { data: workspaceData, error: workspaceError } = await supabase
-          .from('workspaces')
-          .select('id, name, subdomain')
-          .eq('id', userData.workspace_id)
-          .single()
-
-        console.log('Workspace data:', workspaceData)
-        console.log('Workspace error:', workspaceError)
-
-        if (workspaceError) throw workspaceError
-        if (!workspaceData) throw new Error('Workspace not found')
-
-        setWorkspace(workspaceData)
-      } catch (err) {
-        console.error('Error loading workspace:', err)
-        setError(err instanceof Error ? err.message : 'Failed to load workspace')
-      } finally {
-        setLoading(false)
+      } catch (_err) {
+        console.error('Error fetching workspace data:', _err);
+        setError('Failed to load workspace data');
       }
-    }
+    };
+    
+    fetchWorkspaceData();
+  }, [fetchUserData]);
 
-    loadWorkspace()
-  }, [router])
-
-  const handleLogout = async () => {
-    try {
-      const { error } = await supabase.auth.signOut()
-      if (error) throw error
-      router.push('/login')
-    } catch (err) {
-      console.error('Error signing out:', err)
-      setError(err instanceof Error ? err.message : 'Failed to sign out')
-    }
-  }
+  const onLogout = async () => {
+    handleLogout(
+      router,
+      setLoading,
+      (_error) => {
+        toast.error('Failed to log out. Please try again.');
+      }
+    );
+  };
 
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
+        <Spinner className="mr-2" />
         <p className="text-muted-foreground">Loading...</p>
       </div>
     )
@@ -101,9 +114,13 @@ export default function DashboardContent() {
       <div className="max-w-4xl mx-auto space-y-4">
         <div className="flex justify-between items-center">
           <h1 className="text-2xl font-bold">Dashboard</h1>
-          <Button variant="outline" onClick={handleLogout}>
-            Logout
-          </Button>
+          <div className="flex items-center gap-2">
+            <ModeToggle />
+            <Button variant="outline" onClick={onLogout} disabled={loading}>
+              {loading ? <Spinner size="sm" className="mr-2" /> : null}
+              Logout
+            </Button>
+          </div>
         </div>
 
         <Card className="p-6">
@@ -118,9 +135,9 @@ export default function DashboardContent() {
               )}
             </div>
 
-            {error && (
+            {_error && (
               <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
-                {error}
+                {_error}
               </div>
             )}
           </div>

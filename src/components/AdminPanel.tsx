@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react'
 import { LogOut, Edit, Trash2, ExternalLink, AlertCircle } from 'lucide-react'
 import { format } from 'date-fns'
-import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
 import { toast, Toaster } from 'sonner'
+import { handleLogout } from '@/lib/utils'
+import { ModeToggle } from '@/components/mode-toggle'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -18,13 +19,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Spinner } from '@/components/ui/spinner'
 
 interface Workspace {
   id: string
@@ -54,64 +50,105 @@ export default function AdminPanel() {
   const [users, setUsers] = useState<User[]>([])
   const [errors, setErrors] = useState<ErrorState>({})
   const [loading, setLoading] = useState(true)
-
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
   const router = useRouter()
 
   useEffect(() => {
+    // Define fetchData inside useEffect to avoid dependency warning
+    const fetchData = async () => {
+      setLoading(true)
+      try {
+        await Promise.all([fetchWorkspaces(), fetchUsers()])
+      } catch (err) {
+        console.error('Error fetching data:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    
     fetchData()
-  }, [])
+  }, []) // fetchData is defined inside useEffect, so it doesn't need to be a dependency
 
-  const fetchData = async () => {
-    setLoading(true)
+  const fetchWorkspaces = async () => {
     try {
-      // Fetch workspaces
-      const { data: workspacesData, error: workspacesError } = await supabase
-        .from('workspaces')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      if (workspacesError) throw new Error('Failed to fetch workspaces')
-      setWorkspaces(workspacesData)
-
-      // Fetch users
-      const { data: usersData, error: usersError } = await supabase
-        .from('users')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      if (usersError) throw new Error('Failed to fetch users')
-      setUsers(usersData)
+      // Fetch workspaces using API endpoint
+      console.log('Fetching workspaces for admin panel')
+      const workspacesResponse = await fetch('/api/admin/workspaces')
+      
+      if (!workspacesResponse.ok) {
+        const _error = await workspacesResponse.json()
+        console.error('Error response from workspaces API:', _error)
+        throw new Error(_error.error || 'Failed to fetch workspaces')
+      }
+      
+      const workspacesData = await workspacesResponse.json()
+      console.log(`Received ${workspacesData.workspaces?.length || 0} workspaces:`, workspacesData)
+      setWorkspaces(workspacesData.workspaces || [])
     } catch (error) {
+      console.error('Error in fetchWorkspaces:', error)
       setErrors(prev => ({
         ...prev,
-        [activeTab]: `Error loading ${activeTab}: ${error instanceof Error ? error.message : 'Unknown error'}`
+        workspaces: `Error loading workspaces: ${error instanceof Error ? error.message : 'Unknown error'}`
       }))
-    } finally {
-      setLoading(false)
+      
+      // Show toast for better visibility
+      toast.error('Failed to load workspaces. Please try again later.')
     }
   }
 
-  const handleLogout = async () => {
+  const fetchUsers = async () => {
     try {
-      await supabase.auth.signOut()
-      router.push('/login')
+      // Fetch users using API endpoint
+      console.log('Fetching users for admin panel')
+      const usersResponse = await fetch('/api/admin/users')
+      
+      if (!usersResponse.ok) {
+        const _error = await usersResponse.json()
+        console.error('Error response from users API:', _error)
+        throw new Error(_error.error || 'Failed to fetch users')
+      }
+      
+      const usersData = await usersResponse.json()
+      console.log(`Received ${usersData.users?.length || 0} users`)
+      setUsers(usersData.users || [])
     } catch (error) {
-      toast.error('Failed to log out. Please try again.')
+      console.error('Error in fetchUsers:', error)
+      setErrors(prev => ({
+        ...prev,
+        users: `Error loading users: ${error instanceof Error ? error.message : 'Unknown error'}`
+      }))
+      
+      // Show toast for better visibility
+      toast.error('Failed to load users. Please try again later.')
     }
   }
+
+  const onLogout = async () => {
+    handleLogout(
+      router,
+      setLoading,
+      (_error) => {
+        setErrors(prev => ({
+          ...prev,
+          action: 'Failed to log out. Please try again.'
+        }));
+        toast.error('Failed to log out. Please try again.');
+      }
+    );
+  };
 
   const handleDelete = async (type: 'workspace' | 'user', id: string) => {
     try {
-      const { error } = await supabase
-        .from(type === 'workspace' ? 'workspaces' : 'users')
-        .delete()
-        .eq('id', id)
+      const response = await fetch(`/api/admin/${type === 'workspace' ? 'workspaces' : 'users'}/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
 
-      if (error) throw error
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || `Failed to delete ${type}`)
+      }
 
       // Update local state
       if (type === 'workspace') {
@@ -121,31 +158,33 @@ export default function AdminPanel() {
       }
 
       toast.success(`${type} deleted successfully`)
-    } catch (error) {
+    } catch (_err) {
+      // Log error and show toast notification
       toast.error(`Failed to delete ${type}. Please try again.`)
     }
   }
 
-  const handleEdit = (type: 'workspace' | 'user', id: string) => {
+  const handleEdit = (type: 'workspace' | 'user', _id: string) => {
     // Placeholder for edit functionality
     toast.info(`Edit ${type} functionality coming soon`)
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-background text-foreground">
       <Toaster />
       {/* Header */}
-      <header className="sticky top-0 z-10 bg-white border-b shadow-sm">
+      <header className="sticky top-0 z-10 bg-card border-b shadow-sm">
         <div className="container flex items-center justify-between h-16 px-4 mx-auto">
           <div className="text-xl font-bold">CostPerDemo</div>
           <div className="flex items-center gap-4">
+            <ModeToggle />
             <Button variant="outline" size="sm" asChild>
               <a href="/dashboard">
                 <ExternalLink className="w-4 h-4 mr-2" />
                 View as Client
               </a>
             </Button>
-            <Button variant="ghost" size="icon" onClick={handleLogout}>
+            <Button variant="ghost" size="icon" onClick={onLogout}>
               <LogOut className="w-5 h-5" />
               <span className="sr-only">Logout</span>
             </Button>
@@ -167,188 +206,138 @@ export default function AdminPanel() {
               </Alert>
             )}
 
-            <Tabs defaultValue="workspaces" onValueChange={setActiveTab}>
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
-                <TabsTrigger value="users">Users</TabsTrigger>
-              </TabsList>
+            {loading ? (
+              <div className="flex justify-center items-center py-8">
+                <Spinner className="mr-2" />
+                <p>Loading...</p>
+              </div>
+            ) : (
+              <Tabs defaultValue="workspaces" onValueChange={setActiveTab}>
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
+                  <TabsTrigger value="users">Users</TabsTrigger>
+                </TabsList>
 
-              {/* Workspaces Tab */}
-              <TabsContent value="workspaces" className="mt-4">
-                <div className="overflow-x-auto">
-                  {/* Desktop Table */}
-                  <Table className="hidden md:table">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>ID</TableHead>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Subdomain</TableHead>
-                        <TableHead>Created At</TableHead>
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {workspaces.map((workspace) => (
-                        <TableRow key={workspace.id}>
-                          <TableCell>{workspace.id}</TableCell>
-                          <TableCell>{workspace.name}</TableCell>
-                          <TableCell>{workspace.subdomain}</TableCell>
-                          <TableCell>{format(new Date(workspace.created_at), 'MMM d, yyyy')}</TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleEdit('workspace', workspace.id)}
-                              >
-                                <Edit className="w-4 h-4" />
-                                <span className="sr-only">Edit</span>
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleDelete('workspace', workspace.id)}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                                <span className="sr-only">Delete</span>
-                              </Button>
-                            </div>
-                          </TableCell>
+                {/* Workspaces Tab */}
+                <TabsContent value="workspaces" className="mt-4">
+                  <div className="overflow-x-auto">
+                    {/* Desktop Table */}
+                    <Table className="hidden md:table">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>ID</TableHead>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Subdomain</TableHead>
+                          <TableHead>Created At</TableHead>
+                          <TableHead>Actions</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-
-                  {/* Mobile Cards */}
-                  <div className="grid gap-4 md:hidden">
-                    {workspaces.map((workspace) => (
-                      <Card key={workspace.id}>
-                        <CardContent className="p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="font-medium">{workspace.name}</div>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm">
-                                  Actions
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => handleEdit('workspace', workspace.id)}>
-                                  <Edit className="w-4 h-4 mr-2" />
-                                  Edit
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleDelete('workspace', workspace.id)}>
-                                  <Trash2 className="w-4 h-4 mr-2" />
-                                  Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                          <div className="grid grid-cols-2 gap-1 text-sm">
-                            <div className="text-muted-foreground">ID:</div>
-                            <div>{workspace.id}</div>
-                            <div className="text-muted-foreground">Subdomain:</div>
-                            <div>{workspace.subdomain}</div>
-                            <div className="text-muted-foreground">Created:</div>
-                            <div>{format(new Date(workspace.created_at), 'MMM d, yyyy')}</div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                      </TableHeader>
+                      <TableBody>
+                        {workspaces.length > 0 ? (
+                          workspaces.map((workspace) => (
+                            <TableRow key={workspace.id}>
+                              <TableCell className="max-w-[100px] truncate">{workspace.id}</TableCell>
+                              <TableCell>{workspace.name}</TableCell>
+                              <TableCell>{workspace.subdomain}</TableCell>
+                              <TableCell>{format(new Date(workspace.created_at), 'MMM d, yyyy')}</TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleEdit('workspace', workspace.id)}
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                    <span className="sr-only">Edit</span>
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-destructive"
+                                    onClick={() => handleDelete('workspace', workspace.id)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                    <span className="sr-only">Delete</span>
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center py-4">
+                              No workspaces found
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
                   </div>
-                </div>
-              </TabsContent>
+                </TabsContent>
 
-              {/* Users Tab */}
-              <TabsContent value="users" className="mt-4">
-                <div className="overflow-x-auto">
-                  {/* Desktop Table */}
-                  <Table className="hidden md:table">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>ID</TableHead>
-                        <TableHead>Email</TableHead>
-                        <TableHead>Role</TableHead>
-                        <TableHead>Workspace ID</TableHead>
-                        <TableHead>Created At</TableHead>
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {users.map((user) => (
-                        <TableRow key={user.id}>
-                          <TableCell>{user.id}</TableCell>
-                          <TableCell>{user.email}</TableCell>
-                          <TableCell>{user.role}</TableCell>
-                          <TableCell>{user.workspace_id}</TableCell>
-                          <TableCell>{format(new Date(user.created_at), 'MMM d, yyyy')}</TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleEdit('user', user.id)}
-                              >
-                                <Edit className="w-4 h-4" />
-                                <span className="sr-only">Edit</span>
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleDelete('user', user.id)}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                                <span className="sr-only">Delete</span>
-                              </Button>
-                            </div>
-                          </TableCell>
+                {/* Users Tab */}
+                <TabsContent value="users" className="mt-4">
+                  <div className="overflow-x-auto">
+                    <Table className="hidden md:table">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Role</TableHead>
+                          <TableHead>Workspace ID</TableHead>
+                          <TableHead>Created At</TableHead>
+                          <TableHead>Actions</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-
-                  {/* Mobile Cards */}
-                  <div className="grid gap-4 md:hidden">
-                    {users.map((user) => (
-                      <Card key={user.id}>
-                        <CardContent className="p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="font-medium">{user.email}</div>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm">
-                                  Actions
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => handleEdit('user', user.id)}>
-                                  <Edit className="w-4 h-4 mr-2" />
-                                  Edit
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleDelete('user', user.id)}>
-                                  <Trash2 className="w-4 h-4 mr-2" />
-                                  Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                          <div className="grid grid-cols-2 gap-1 text-sm">
-                            <div className="text-muted-foreground">ID:</div>
-                            <div>{user.id}</div>
-                            <div className="text-muted-foreground">Role:</div>
-                            <div>{user.role}</div>
-                            <div className="text-muted-foreground">Workspace:</div>
-                            <div>{user.workspace_id}</div>
-                            <div className="text-muted-foreground">Created:</div>
-                            <div>{format(new Date(user.created_at), 'MMM d, yyyy')}</div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                      </TableHeader>
+                      <TableBody>
+                        {users.length > 0 ? (
+                          users.map((user) => (
+                            <TableRow key={user.id}>
+                              <TableCell>{user.email}</TableCell>
+                              <TableCell>
+                                <span className={`px-2 py-1 rounded-full text-xs ${
+                                  user.role === 'admin' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100'
+                                }`}>
+                                  {user.role}
+                                </span>
+                              </TableCell>
+                              <TableCell className="max-w-[100px] truncate">{user.workspace_id || '-'}</TableCell>
+                              <TableCell>{format(new Date(user.created_at), 'MMM d, yyyy')}</TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleEdit('user', user.id)}
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                    <span className="sr-only">Edit</span>
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-destructive"
+                                    onClick={() => handleDelete('user', user.id)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                    <span className="sr-only">Delete</span>
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center py-4">
+                              No users found
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
                   </div>
-                </div>
-              </TabsContent>
-            </Tabs>
+                </TabsContent>
+              </Tabs>
+            )}
           </CardContent>
         </Card>
       </main>

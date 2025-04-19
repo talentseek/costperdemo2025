@@ -6,36 +6,35 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
-export type Database = {
+export interface Database {
   public: {
     Tables: {
       users: {
         Row: {
-          created_at: string | null
-          email: string
           id: string
+          email: string
           role: string
           workspace_id: string | null
+          created_at: string
         }
         Insert: {
-          created_at?: string | null
-          email: string
-          id: string
-          role: string
-          workspace_id?: string | null
-        }
-        Update: {
-          created_at?: string | null
-          email?: string
           id?: string
+          email: string
           role?: string
           workspace_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          email?: string
+          role?: string
+          workspace_id?: string | null
+          created_at?: string
         }
         Relationships: [
           {
             foreignKeyName: "users_workspace_id_fkey"
             columns: ["workspace_id"]
-            isOneToOne: false
             referencedRelation: "workspaces"
             referencedColumns: ["id"]
           }
@@ -43,27 +42,37 @@ export type Database = {
       }
       workspaces: {
         Row: {
-          created_at: string | null
           id: string
           name: string
-          subdomain: string | null
+          subdomain: string
+          owner_id: string
+          created_at: string
           updated_at: string | null
         }
         Insert: {
-          created_at?: string | null
           id?: string
           name: string
-          subdomain?: string | null
+          subdomain: string
+          owner_id: string
+          created_at?: string
           updated_at?: string | null
         }
         Update: {
-          created_at?: string | null
           id?: string
           name?: string
-          subdomain?: string | null
+          subdomain?: string
+          owner_id?: string
+          created_at?: string
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "workspaces_owner_id_fkey"
+            columns: ["owner_id"]
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
       }
     }
     Views: {
