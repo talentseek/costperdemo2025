@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { LogOut, Edit, Trash2, ExternalLink, AlertCircle } from 'lucide-react'
 import { format } from 'date-fns'
-import { createBrowserClient } from '@supabase/ssr'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { useRouter } from 'next/navigation'
 import { toast, Toaster } from 'sonner'
+import type { Workspace } from '@/types/workspace'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -25,13 +26,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-
-interface Workspace {
-  id: string
-  name: string
-  subdomain: string
-  created_at: string
-}
+import { Spinner } from '@/components/ui/spinner'
 
 interface User {
   id: string
@@ -52,48 +47,44 @@ export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState('workspaces')
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [users, setUsers] = useState<User[]>([])
-  const [errors, setErrors] = useState<ErrorState>({})
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
+  const [errors, setErrors] = useState<Record<string, string | undefined>>({})
+  const [error, setError] = useState<string | null>(null)
 
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
   const router = useRouter()
+  const supabase = createClientComponentClient()
 
   useEffect(() => {
-    fetchData()
-  }, [])
-
-  const fetchData = async () => {
-    setLoading(true)
-    try {
-      // Fetch workspaces
-      const { data: workspacesData, error: workspacesError } = await supabase
-        .from('workspaces')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      if (workspacesError) throw new Error('Failed to fetch workspaces')
-      setWorkspaces(workspacesData)
-
-      // Fetch users
-      const { data: usersData, error: usersError } = await supabase
-        .from('users')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      if (usersError) throw new Error('Failed to fetch users')
-      setUsers(usersData)
-    } catch (error) {
-      setErrors(prev => ({
-        ...prev,
-        [activeTab]: `Error loading ${activeTab}: ${error instanceof Error ? error.message : 'Unknown error'}`
-      }))
-    } finally {
-      setLoading(false)
+    const fetchData = async () => {
+      setLoading(true)
+      setError(null)
+      
+      try {
+        if (activeTab === 'workspaces') {
+          const { data, error } = await supabase
+            .from('workspaces')
+            .select('*')
+          
+          if (error) throw error
+          setWorkspaces(data || [])
+        } else if (activeTab === 'users') {
+          const { data, error } = await supabase
+            .from('users')
+            .select('*')
+          
+          if (error) throw error
+          setUsers(data || [])
+        }
+      } catch (err: any) {
+        setError(err.message || 'An error occurred')
+        console.error('Error fetching data:', err)
+      } finally {
+        setLoading(false)
+      }
     }
-  }
+    
+    fetchData()
+  }, [activeTab])
 
   const handleLogout = async () => {
     try {
@@ -129,6 +120,38 @@ export default function AdminPanel() {
   const handleEdit = (type: 'workspace' | 'user', id: string) => {
     // Placeholder for edit functionality
     toast.info(`Edit ${type} functionality coming soon`)
+  }
+
+  const renderUsers = () => {
+    if (loading) {
+      return <div className="flex justify-center p-4">
+        <Spinner size="md" />
+      </div>
+    }
+    
+    if (error) {
+      return <div className="text-red-500">Error: {error}</div>
+    }
+    
+    if (users.length === 0) {
+      return <div>No users found</div>
+    }
+    
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {users.map((user) => (
+          <div key={user.id} className="bg-white p-4 rounded-lg shadow">
+            <h3 className="font-semibold">{user.email}</h3>
+            <p>Role: {user.role}</p>
+            <p>Created: {new Date(user.created_at).toLocaleDateString()}</p>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (error) {
+    return <div className="text-red-500">{error}</div>
   }
 
   return (
@@ -192,8 +215,8 @@ export default function AdminPanel() {
                         <TableRow key={workspace.id}>
                           <TableCell>{workspace.id}</TableCell>
                           <TableCell>{workspace.name}</TableCell>
-                          <TableCell>{workspace.subdomain}</TableCell>
-                          <TableCell>{format(new Date(workspace.created_at), 'MMM d, yyyy')}</TableCell>
+                          <TableCell>{workspace.subdomain || 'Not set'}</TableCell>
+                          <TableCell>{format(new Date(workspace.created_at || ''), 'MMM d, yyyy')}</TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
                               <Button
@@ -248,9 +271,9 @@ export default function AdminPanel() {
                             <div className="text-muted-foreground">ID:</div>
                             <div>{workspace.id}</div>
                             <div className="text-muted-foreground">Subdomain:</div>
-                            <div>{workspace.subdomain}</div>
+                            <div>{workspace.subdomain || 'Not set'}</div>
                             <div className="text-muted-foreground">Created:</div>
-                            <div>{format(new Date(workspace.created_at), 'MMM d, yyyy')}</div>
+                            <div>{format(new Date(workspace.created_at || ''), 'MMM d, yyyy')}</div>
                           </div>
                         </CardContent>
                       </Card>

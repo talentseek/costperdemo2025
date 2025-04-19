@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { supabase } from '@/lib/supabase'
+import { Spinner } from '@/components/ui/spinner'
 
 interface Workspace {
   id: string
@@ -17,6 +18,8 @@ export default function DashboardContent() {
   const [workspace, setWorkspace] = useState<Workspace | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [onboardingStatus, setOnboardingStatus] = useState<string>('Pending')
+  const [onboardingData, setOnboardingData] = useState<any>(null)
 
   useEffect(() => {
     async function loadWorkspace() {
@@ -77,6 +80,37 @@ export default function DashboardContent() {
     loadWorkspace()
   }, [router])
 
+  useEffect(() => {
+    const fetchOnboardingData = async () => {
+      try {
+        const { data: onboardingData, error } = await supabase
+          .from('workspace_onboarding')
+          .select('first_name, last_name')
+          .single()
+
+        if (error) {
+          console.error('Error fetching onboarding data:', error)
+          return
+        }
+
+        const status = determineOnboardingStatus(onboardingData)
+        setOnboardingStatus(status)
+        setOnboardingData(onboardingData)
+      } catch (error) {
+        console.error('Error in fetchOnboardingData:', error)
+      }
+    }
+
+    fetchOnboardingData()
+  }, [])
+
+  // Helper function to determine onboarding status
+  const determineOnboardingStatus = (data: { first_name: string | null; last_name: string | null }) => {
+    if (!data) return 'Pending'
+    if (data.first_name && data.last_name) return 'Approved'
+    return 'In Progress'
+  }
+
   const handleLogout = async () => {
     try {
       const { error } = await supabase.auth.signOut()
@@ -91,7 +125,7 @@ export default function DashboardContent() {
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <p className="text-muted-foreground">Loading...</p>
+        <Spinner size="lg" />
       </div>
     )
   }

@@ -40,12 +40,16 @@ export default function WorkspaceForm() {
     setError("")
 
     try {
+      console.log('Starting workspace creation process')
       // Get current user
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       if (userError) throw new Error(userError.message)
       if (!user) throw new Error('No authenticated user found')
 
+      console.log('Current user:', { id: user.id, email: user.email })
+
       // Start a transaction by creating the workspace first
+      console.log('Creating workspace:', data.companyName)
       const { data: workspace, error: workspaceError } = await supabase
         .from('workspaces')
         .insert({
@@ -59,7 +63,10 @@ export default function WorkspaceForm() {
       if (workspaceError) throw new Error(workspaceError.message)
       if (!workspace) throw new Error('Failed to create workspace')
 
+      console.log('Workspace created:', { id: workspace.id, name: workspace.name })
+
       // Check if user record exists
+      console.log('Checking for existing user record')
       const { data: existingUser, error: userCheckError } = await supabase
         .from('users')
         .select()
@@ -67,10 +74,12 @@ export default function WorkspaceForm() {
         .maybeSingle()
 
       if (userCheckError) throw new Error(userCheckError.message)
+      console.log('Existing user check result:', existingUser ? 'Found' : 'Not found')
 
       if (!existingUser) {
         // Create new user record if it doesn't exist
-        const { error: createUserError } = await supabase
+        console.log('Creating new user record with role "client"')
+        const { data: newUser, error: createUserError } = await supabase
           .from('users')
           .insert({
             id: user.id,
@@ -78,18 +87,32 @@ export default function WorkspaceForm() {
             role: 'client',
             workspace_id: workspace.id
           })
+          .select()
 
-        if (createUserError) throw new Error(createUserError.message)
+        if (createUserError) {
+          console.error('Error creating user record:', createUserError)
+          throw new Error(createUserError.message)
+        }
+        
+        console.log('User record created:', newUser)
       } else {
         // Update existing user's workspace_id
-        const { error: updateError } = await supabase
+        console.log('Updating existing user workspace_id')
+        const { data: updatedUser, error: updateError } = await supabase
           .from('users')
           .update({ workspace_id: workspace.id })
           .eq('id', user.id)
+          .select()
 
-        if (updateError) throw new Error(updateError.message)
+        if (updateError) {
+          console.error('Error updating user record:', updateError)
+          throw new Error(updateError.message)
+        }
+        
+        console.log('User record updated:', updatedUser)
       }
 
+      console.log('Workspace setup complete, redirecting to dashboard')
       router.push('/dashboard')
     } catch (err) {
       console.error('Error creating workspace:', err)
