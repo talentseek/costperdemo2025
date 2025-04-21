@@ -27,6 +27,10 @@ interface Workspace {
   name: string
   subdomain: string
   created_at: string
+  owner?: {
+    id: string
+    email: string
+  } | null
 }
 
 interface User {
@@ -35,6 +39,11 @@ interface User {
   role: string
   workspace_id: string
   created_at: string
+  workspace?: {
+    id: string
+    name: string
+    subdomain: string
+  } | null
 }
 
 interface ErrorState {
@@ -83,6 +92,12 @@ export default function AdminPanel() {
       const workspacesData = await workspacesResponse.json()
       console.log(`Received ${workspacesData.workspaces?.length || 0} workspaces:`, workspacesData)
       setWorkspaces(workspacesData.workspaces || [])
+      
+      // Show note about RLS if present
+      if (workspacesData.note) {
+        console.warn(workspacesData.note)
+        toast.warning(workspacesData.note)
+      }
     } catch (error) {
       console.error('Error in fetchWorkspaces:', error)
       setErrors(prev => ({
@@ -110,6 +125,12 @@ export default function AdminPanel() {
       const usersData = await usersResponse.json()
       console.log(`Received ${usersData.users?.length || 0} users`)
       setUsers(usersData.users || [])
+      
+      // Show note about RLS if present
+      if (usersData.note) {
+        console.warn(usersData.note)
+        toast.warning(usersData.note)
+      }
     } catch (error) {
       console.error('Error in fetchUsers:', error)
       setErrors(prev => ({
@@ -184,9 +205,9 @@ export default function AdminPanel() {
                 View as Client
               </a>
             </Button>
-            <Button variant="ghost" size="icon" onClick={onLogout}>
-              <LogOut className="w-5 h-5" />
-              <span className="sr-only">Logout</span>
+            <Button variant="destructive" onClick={onLogout}>
+              <LogOut className="w-4 h-4 mr-2" />
+              Logout
             </Button>
           </div>
         </div>
@@ -221,119 +242,185 @@ export default function AdminPanel() {
                 {/* Workspaces Tab */}
                 <TabsContent value="workspaces" className="mt-4">
                   <div className="overflow-x-auto">
-                    {/* Desktop Table */}
-                    <Table className="hidden md:table">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>ID</TableHead>
-                          <TableHead>Name</TableHead>
-                          <TableHead>Subdomain</TableHead>
-                          <TableHead>Created At</TableHead>
-                          <TableHead>Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {workspaces.length > 0 ? (
-                          workspaces.map((workspace) => (
-                            <TableRow key={workspace.id}>
-                              <TableCell className="max-w-[100px] truncate">{workspace.id}</TableCell>
-                              <TableCell>{workspace.name}</TableCell>
-                              <TableCell>{workspace.subdomain}</TableCell>
-                              <TableCell>{format(new Date(workspace.created_at), 'MMM d, yyyy')}</TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-2">
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => handleEdit('workspace', workspace.id)}
-                                  >
-                                    <Edit className="h-4 w-4" />
-                                    <span className="sr-only">Edit</span>
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="text-destructive"
-                                    onClick={() => handleDelete('workspace', workspace.id)}
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                    <span className="sr-only">Delete</span>
-                                  </Button>
-                                </div>
-                              </TableCell>
+                    {workspaces.length > 0 ? (
+                      <>
+                        {/* Desktop Table */}
+                        <Table className="hidden md:table">
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>ID</TableHead>
+                              <TableHead>Name</TableHead>
+                              <TableHead>Subdomain</TableHead>
+                              <TableHead>Owner</TableHead>
+                              <TableHead>Created At</TableHead>
+                              <TableHead>Actions</TableHead>
                             </TableRow>
-                          ))
-                        ) : (
-                          <TableRow>
-                            <TableCell colSpan={5} className="text-center py-4">
-                              No workspaces found
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
+                          </TableHeader>
+                          <TableBody>
+                            {workspaces.map((workspace) => (
+                              <TableRow key={workspace.id}>
+                                <TableCell className="max-w-[100px] truncate">{workspace.id}</TableCell>
+                                <TableCell>{workspace.name}</TableCell>
+                                <TableCell>{workspace.subdomain}</TableCell>
+                                <TableCell>{workspace.owner?.email || 'N/A'}</TableCell>
+                                <TableCell>{format(new Date(workspace.created_at), 'MMM d, yyyy')}</TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleEdit('workspace', workspace.id)}
+                                    >
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                    <Button 
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleDelete('workspace', workspace.id)}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+
+                        {/* Mobile Cards */}
+                        <div className="grid grid-cols-1 gap-4 md:hidden">
+                          {workspaces.map((workspace) => (
+                            <Card key={workspace.id}>
+                              <CardContent className="pt-6">
+                                <div className="flex justify-between items-start mb-2">
+                                  <div className="font-medium">{workspace.name}</div>
+                                  <div className="flex gap-1">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleEdit('workspace', workspace.id)}
+                                    >
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                    <Button 
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleDelete('workspace', workspace.id)}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+                                <div className="text-sm text-muted-foreground mb-1">
+                                  Subdomain: {workspace.subdomain}
+                                </div>
+                                <div className="text-sm text-muted-foreground mb-1">
+                                  Owner: {workspace.owner?.email || 'N/A'}
+                                </div>
+                                <div className="text-xs text-muted-foreground mt-2">
+                                  Created: {format(new Date(workspace.created_at), 'MMM d, yyyy')}
+                                </div>
+                                <div className="text-xs text-muted-foreground mt-1 truncate">
+                                  ID: {workspace.id}
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-center py-4">No workspaces found</div>
+                    )}
                   </div>
                 </TabsContent>
 
                 {/* Users Tab */}
                 <TabsContent value="users" className="mt-4">
                   <div className="overflow-x-auto">
-                    <Table className="hidden md:table">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Email</TableHead>
-                          <TableHead>Role</TableHead>
-                          <TableHead>Workspace ID</TableHead>
-                          <TableHead>Created At</TableHead>
-                          <TableHead>Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {users.length > 0 ? (
-                          users.map((user) => (
-                            <TableRow key={user.id}>
-                              <TableCell>{user.email}</TableCell>
-                              <TableCell>
-                                <span className={`px-2 py-1 rounded-full text-xs ${
-                                  user.role === 'admin' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100'
-                                }`}>
-                                  {user.role}
-                                </span>
-                              </TableCell>
-                              <TableCell className="max-w-[100px] truncate">{user.workspace_id || '-'}</TableCell>
-                              <TableCell>{format(new Date(user.created_at), 'MMM d, yyyy')}</TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-2">
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => handleEdit('user', user.id)}
-                                  >
-                                    <Edit className="h-4 w-4" />
-                                    <span className="sr-only">Edit</span>
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="text-destructive"
-                                    onClick={() => handleDelete('user', user.id)}
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                    <span className="sr-only">Delete</span>
-                                  </Button>
-                                </div>
-                              </TableCell>
+                    {users.length > 0 ? (
+                      <>
+                        {/* Desktop Table */}
+                        <Table className="hidden md:table">
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Email</TableHead>
+                              <TableHead>Role</TableHead>
+                              <TableHead>Workspace</TableHead>
+                              <TableHead>Created At</TableHead>
+                              <TableHead>Actions</TableHead>
                             </TableRow>
-                          ))
-                        ) : (
-                          <TableRow>
-                            <TableCell colSpan={5} className="text-center py-4">
-                              No users found
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
+                          </TableHeader>
+                          <TableBody>
+                            {users.map((user) => (
+                              <TableRow key={user.id}>
+                                <TableCell>{user.email}</TableCell>
+                                <TableCell>{user.role}</TableCell>
+                                <TableCell>{user.workspace?.name || 'None'}</TableCell>
+                                <TableCell>{format(new Date(user.created_at), 'MMM d, yyyy')}</TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleEdit('user', user.id)}
+                                    >
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                    <Button 
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleDelete('user', user.id)}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+
+                        {/* Mobile Cards */}
+                        <div className="grid grid-cols-1 gap-4 md:hidden">
+                          {users.map((user) => (
+                            <Card key={user.id}>
+                              <CardContent className="pt-6">
+                                <div className="flex justify-between items-start mb-2">
+                                  <div className="font-medium">{user.email}</div>
+                                  <div className="flex gap-1">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleEdit('user', user.id)}
+                                    >
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                    <Button 
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => handleDelete('user', user.id)}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+                                <div className="text-sm text-muted-foreground mb-1">
+                                  Role: {user.role}
+                                </div>
+                                <div className="text-sm text-muted-foreground mb-1">
+                                  Workspace: {user.workspace?.name || 'None'}
+                                </div>
+                                <div className="text-xs text-muted-foreground mt-2">
+                                  Created: {format(new Date(user.created_at), 'MMM d, yyyy')}
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-center py-4">No users found</div>
+                    )}
                   </div>
                 </TabsContent>
               </Tabs>

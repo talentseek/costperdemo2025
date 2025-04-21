@@ -34,17 +34,16 @@ export async function handleLogout(
       throw new Error(data.error || 'Logout failed');
     }
     
-    // Use the redirectTo URL from the API response if available
-    if (data.redirectTo) {
-      router.push(data.redirectTo);
-    } else {
-      // Fallback to the default redirect
-      router.push('/auth?tab=login');
-    }
+    // Clear any previous errors that might be in the URL
+    // Use window.location for a full page refresh to clear any client state
+    window.location.href = '/auth?tab=login';
   } catch (error) {
     console.error('Logout error:', error);
     if (onError && error instanceof Error) {
       onError(error);
+    } else {
+      // If no error handler is provided, redirect to login anyway
+      window.location.href = '/auth?tab=login';
     }
   } finally {
     if (setLoading) setLoading(false);

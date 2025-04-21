@@ -72,8 +72,39 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  // Refresh the session
-  await supabase.auth.getUser()
+  try {
+    console.log('Refreshing auth session in middleware');
+    
+    // Get all cookies from the request to debug
+    const allCookies = request.cookies.getAll();
+    console.log('Available cookies:', allCookies.map(c => c.name).join(', '));
+    
+    // First get the session which also refreshes it if needed
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    
+    if (sessionError) {
+      console.error('Session error in middleware updateSession:', sessionError);
+    }
+    
+    if (session) {
+      console.log('Session found for user:', session.user.email);
+      
+      // Explicitly get user to verify token and trigger refresh if needed
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      
+      if (userError) {
+        console.error('User error in middleware updateSession:', userError);
+      } else if (user) {
+        console.log('User verified in middleware:', user.email);
+      }
+    } else {
+      console.log('No session found in middleware updateSession');
+    }
+  } catch (error) {
+    console.error('Error refreshing session in middleware:', error)
+    // We just log the error but still return the response
+    // to allow the middleware to continue
+  }
 
   return response
 } 

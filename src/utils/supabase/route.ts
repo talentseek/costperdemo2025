@@ -1,69 +1,74 @@
 import { createServerClient } from '@supabase/ssr'
+import { Database } from '@/types/supabase'
 
 /**
  * Creates a Supabase client for route handlers
- * Uses a dynamic approach to handle cookies that works with both App Router and Pages Router
+ * This version works in API routes with proper cookie handling
+ * @param request - The request object to get cookies from
+ * @param response - The response object to set cookies on
  * @returns Supabase client configured for route handlers
  */
-export function createRouteHandlerSupabaseClient() {
-  return createServerClient(
+export function createRouteHandlerClient(request: Request, response: Response) {
+  return createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        async get(name: string) {
-          try {
-            // Only try to access cookies() in a server context
-            if (typeof window === 'undefined') {
-              // Use a try-catch around dynamic import to avoid build errors
-              try {
-                const { cookies } = require('next/headers')
-                const cookieStore = await cookies()
-                return cookieStore.get(name)?.value
-              } catch (error) {
-                // Silently handle when next/headers is not available (Pages Router)
-                console.warn('Unable to access cookies in route handler:', error)
-                return undefined
-              }
-            }
-          } catch (error) {
-            // Fallback for any other errors
-            console.error('Error getting cookie in route handler:', error)
-            return undefined
-          }
-          return undefined
+        get(name: string) {
+          return request.headers.get('cookie')?.split(';')
+            .find(c => c.trim().startsWith(`${name}=`))
+            ?.split('=')[1]
         },
-        async set(name: string, value: string, options) {
-          try {
-            if (typeof window === 'undefined') {
-              try {
-                const { cookies } = require('next/headers')
-                const cookieStore = await cookies()
-                cookieStore.set(name, value, options)
-              } catch (error) {
-                console.warn('Unable to set cookie:', error)
-              }
-            }
-          } catch (error) {
-            console.error('Error setting cookie in route handler:', error)
-          }
+        set(name: string, value: string, options: any) {
+          // Build cookie string
+          let cookieStr = `${name}=${value}; path=${options.path || '/'}`;
+          
+          if (options.maxAge) cookieStr += `; max-age=${options.maxAge}`;
+          if (options.domain) cookieStr += `; domain=${options.domain}`;
+          if (options.secure) cookieStr += '; secure';
+          if (options.httpOnly) cookieStr += '; httponly';
+          if (options.sameSite) cookieStr += `; samesite=${options.sameSite}`;
+          
+          response.headers.append('Set-Cookie', cookieStr);
         },
-        async remove(name: string, options) {
-          try {
-            if (typeof window === 'undefined') {
-              try {
-                const { cookies } = require('next/headers')
-                const cookieStore = await cookies()
-                cookieStore.set(name, '', { ...options, maxAge: 0 })
-              } catch (error) {
-                console.warn('Unable to remove cookie:', error)
-              }
-            }
-          } catch (error) {
-            console.error('Error removing cookie in route handler:', error)
-          }
+        remove(name: string, options: any) {
+          // Set cookie with empty value and immediate expiration
+          let cookieStr = `${name}=; path=${options.path || '/'}; max-age=0`;
+          
+          if (options.domain) cookieStr += `; domain=${options.domain}`;
+          if (options.secure) cookieStr += '; secure';
+          if (options.httpOnly) cookieStr += '; httponly';
+          if (options.sameSite) cookieStr += `; samesite=${options.sameSite}`;
+          
+          response.headers.append('Set-Cookie', cookieStr);
+        }
+      }
+    }
+  )
+}
+
+/**
+ * Creates a Supabase client for API route handlers
+ * This version uses direct cookie parsing from request headers
+ * and should be used with the request object available in route handlers
+ * @param request - The request object to get cookies from
+ * @returns Supabase client for API routes
+ */
+export function createRouteHandlerSupabaseClient(request: Request) {
+  return createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          // Parse cookies from the cookie header directly
+          const cookieString = request.headers.get('cookie') || '';
+          const match = cookieString.match(new RegExp(`(^| )${name}=([^;]+)`));
+          return match?.[2];
         },
-      },
+        set: () => {}, // No-op since we can't set cookies at request time
+        remove: () => {} // No-op since we can't remove cookies at request time
+      }
     }
   )
 } 

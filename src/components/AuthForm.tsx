@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
-import { createBrowserClient } from '@/utils/supabase'
+import { createClientComponentClient } from '@/utils/supabase'
 import { Card } from "@/components/ui/card"
 
 interface FormState {
@@ -69,7 +69,7 @@ export default function AuthForm({ defaultTab = "login" }: AuthFormProps) {
     loginPassword: '',
   })
 
-  const supabase = createBrowserClient()
+  const supabase = createClientComponentClient()
   
   // Use searchParams to get the active tab
   const _activeTab = params?.get('tab') || 'login'
@@ -210,11 +210,12 @@ export default function AuthForm({ defaultTab = "login" }: AuthFormProps) {
     if (valid) {
       setIsLoading(true)
       try {
-        // Use the API route for consistency
+        // Use the API route for login
         const response = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(loginForm),
+          credentials: 'include', // Important to include cookies
         })
         
         // Check if the response is JSON
@@ -242,19 +243,22 @@ export default function AuthForm({ defaultTab = "login" }: AuthFormProps) {
           return
         }
         
+        // Use the data from the API response
+        const userData = data.user
+        
         // Determine redirect based on user role & workspace
         let redirectPath = '/workspace'
         
-        if (data.user?.workspace_id) {
+        if (userData?.workspace_id) {
           // Check for stored redirect path or use dashboard
           redirectPath = sessionStorage.getItem('redirectTo') || '/dashboard'
           sessionStorage.removeItem('redirectTo') // Clear after use
-        } else if (data.user?.role === 'admin') {
+        } else if (userData?.role === 'admin') {
           redirectPath = '/admin'
         }
         
-        router.push(redirectPath)
-        router.refresh()
+        // Force reload to ensure we have the correct session
+        window.location.href = redirectPath
       } catch (err) {
         console.error('Login error:', err)
         setErrors(prev => ({
@@ -263,6 +267,10 @@ export default function AuthForm({ defaultTab = "login" }: AuthFormProps) {
             ? err.message 
             : 'Could not connect to the server. Please check your internet connection.'
         }))
+        
+        // Clear any existing partial session data
+        sessionStorage.removeItem('redirectTo')
+        supabase.auth.signOut()
       } finally {
         setIsLoading(false)
       }

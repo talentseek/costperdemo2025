@@ -2,6 +2,7 @@ import './globals.css'
 import { Inter } from 'next/font/google'
 import { Metadata, Viewport } from 'next'
 import { ThemeProvider } from '@/components/theme-provider'
+import { Toaster } from '@/components/ui/toaster'
 
 // Initialize Inter font
 const inter = Inter({ subsets: ['latin'] })
@@ -40,6 +41,7 @@ export default function RootLayout({
           <main className="min-h-screen bg-[hsl(var(--background))]">
             {children}
           </main>
+          <Toaster />
         </ThemeProvider>
       </body>
     </html>

@@ -13,6 +13,7 @@ CostPerDemo is a Next.js-based B2B SaaS platform for client authentication, work
 - [API Endpoints](#api-endpoints)
 - [Theming and Dark Mode](#theming-and-dark-mode)
 - [Development Guidelines](#development-guidelines)
+- [Development Plan](DEVELOPMENT_PLAN.md)
 
 ## Architecture Overview
 

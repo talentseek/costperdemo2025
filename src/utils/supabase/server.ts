@@ -1,43 +1,40 @@
 import { createServerClient } from '@supabase/ssr'
+import { Database } from '@/types/supabase'
 
 /**
- * Creates a Supabase client for server components
- * Uses a dynamic approach that works with both App Router and Pages Router
+ * Creates a basic Supabase client for server components
+ * This version doesn't use cookies but creates a minimal client
  * @returns Supabase client
  */
 export function createServerComponentClient() {
-  return createServerClient(
+  return createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          try {
-            // Only try to access cookies() in a server context
-            if (typeof window === 'undefined') {
-              try {
-                const { cookies } = require('next/headers')
-                return cookies().get(name)?.value
-              } catch {
-                // Silently handle when next/headers is not available (Pages Router)
-                return undefined
-              }
-            }
-          } catch {
-            // Fallback for any other errors
-            return undefined
-          }
-          return undefined
-        },
-        set() {
-          // Can't set cookies in server components
-          console.warn('Cannot set cookies in a Server Component')
-        },
-        remove() {
-          // Can't remove cookies in server components
-          console.warn('Cannot remove cookies in a Server Component')
-        }
+        get: () => undefined, // No cookies access in this version
+        set: () => {}, // Server components can't set cookies
+        remove: () => {} // Server components can't remove cookies
       }
+    }
+  )
+}
+
+/**
+ * Creates a Supabase client for server components that uses cookie handler functions
+ * @param cookieHandlers - Object with get/set/remove functions for cookie management 
+ * @returns Supabase client
+ */
+export function createServerComponentClientWithCookies(cookieHandlers: {
+  get: (name: string) => string | undefined;
+  set: (name: string, value: string, options: any) => void;
+  remove: (name: string, options: any) => void;
+}) {
+  return createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: cookieHandlers
     }
   )
 } 

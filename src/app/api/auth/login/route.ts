@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createRouteHandlerSupabaseClient } from '@/utils/supabase/route'
+import { createServerClient } from '@supabase/ssr'
+import { Database } from '@/types/supabase'
 
 export async function POST(request: Request) {
   try {
@@ -25,8 +26,43 @@ export async function POST(request: Request) {
       )
     }
     
-    // Create Supabase client with proper cookie handling
-    const supabase = createRouteHandlerSupabaseClient()
+    // Create a response to include cookies
+    const response = NextResponse.json({ 
+      message: 'Authentication in progress' 
+    });
+    
+    // Create Supabase client with cookie handling
+    const supabase = createServerClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name) {
+            // Parse cookies from the cookie header directly
+            const cookieString = request.headers.get('cookie') || '';
+            const match = cookieString.match(new RegExp(`(^| )${name}=([^;]+)`));
+            return match?.[2];
+          },
+          set(name, value, options) {
+            // Add cookie to the response
+            response.cookies.set({
+              name,
+              value,
+              ...options,
+            });
+          },
+          remove(name, options) {
+            // Remove the cookie
+            response.cookies.set({
+              name,
+              value: '',
+              ...options,
+              maxAge: 0,
+            });
+          },
+        },
+      }
+    );
     
     // Sign in with email and password
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -35,63 +71,77 @@ export async function POST(request: Request) {
     })
     
     if (error) {
-      console.log('Login error:', error.message)
+      console.error('Login error:', error)
       
-      // Provide more user-friendly error messages based on Supabase error codes
-      let userMessage = 'Invalid login credentials'
+      // Return user-friendly error message based on error code
+      let errorMessage = 'Authentication failed'
       
       if (error.message.includes('Invalid login credentials')) {
-        userMessage = 'The email or password you entered is incorrect'
+        errorMessage = 'Invalid email or password'
       } else if (error.message.includes('Email not confirmed')) {
-        userMessage = 'Please verify your email before logging in'
-      } else if (error.message.includes('rate limit')) {
-        userMessage = 'Too many login attempts. Please try again later'
+        errorMessage = 'Please verify your email address before logging in'
       }
       
       return NextResponse.json(
-        { error: userMessage },
-        { status: 400 }
+        { error: errorMessage },
+        { status: 401 }
       )
     }
     
     if (!data.user) {
       return NextResponse.json(
-        { error: 'Authentication failed. Please try again' },
-        { status: 401 }
+        { error: 'User not found' },
+        { status: 404 }
       )
     }
     
-    // Get user data including role and workspace_id from the database
+    // Get user data from database to get role
     const { data: userData, error: userError } = await supabase
       .from('users')
-      .select('role, workspace_id')
+      .select('id, email, role, workspace_id')
       .eq('id', data.user.id)
       .single()
     
     if (userError) {
       console.error('Error fetching user data:', userError)
-      // Continue with default role if user data can't be fetched
+      return NextResponse.json(
+        { error: 'Error fetching user details' },
+        { status: 500 }
+      )
     }
     
-    const userRole = userData?.role || 'client'
-    const workspaceId = userData?.workspace_id || null
-    
-    // Return response with user data
-    // Cookies have already been set by the ssr client
-    return NextResponse.json({
-      message: 'Login successful',
+    // Create final response with user details
+    const authResponse = NextResponse.json({
       user: {
         id: data.user.id,
         email: data.user.email,
-        role: userRole,
-        workspace_id: workspaceId,
+        role: userData?.role || 'client',
+        workspace_id: userData?.workspace_id,
       },
+      session: {
+        expires_at: data.session?.expires_at,
+      }
     })
     
+    // Copy cookies from the login response to the final response
+    response.cookies.getAll().forEach(cookie => {
+      authResponse.cookies.set({
+        name: cookie.name,
+        value: cookie.value,
+        path: '/',
+        maxAge: cookie.maxAge,
+        domain: cookie.domain,
+        secure: cookie.secure,
+        httpOnly: cookie.httpOnly,
+        sameSite: cookie.sameSite,
+      });
+    })
+    
+    return authResponse
   } catch (error) {
     console.error('Login error:', error)
     return NextResponse.json(
-      { error: 'Something went wrong. Please try again later' },
+      { error: 'Internal server error' },
       { status: 500 }
     )
   }
